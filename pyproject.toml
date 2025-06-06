@@ -11,14 +11,19 @@ authors = [
     { name = "Peter Pak", email = "ppak10@gmail.com" }
 ]
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "django>=4.0",
+    "djangorestframework>=3.16.0",
+    "mcp>=1.9.3",
+]
 
 [project.urls]
 Homepage = "https://github.com/ppak10/django-modelcontextprotocol"
 Repository = "https://github.com/ppak10/django-modelcontextprotocol"
+Issues = "https://github.com/ppak10/django-modelcontextprotocol/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/django_mcp"]
 
 [tool.hatch.version]
-path = "src/django_mcp/__init__.py"  # or another version file
+path = "src/django_mcp/__init__.py"
