@@ -3,6 +3,7 @@ from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated, Pe
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
+from django_mcp.methods.ping import ping 
 from django_mcp.methods.resources_list import resources_list
 from django_mcp.methods.resources_templates_list import resources_templates_list
 from django_mcp.methods.prompts_list import prompts_list
@@ -65,7 +66,9 @@ class MethodsView(APIView):
 
         method = request.data.get("method")
 
-        if method == 'resources/list':
+        if method == 'ping':
+            return ping(request)
+        elif method == 'resources/list':
             return resources_list(request)
         elif method == 'resources/templates/list':
             return resources_templates_list(request)
