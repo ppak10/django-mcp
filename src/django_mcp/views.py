@@ -4,8 +4,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from django_mcp.methods.ping import ping 
+from django_mcp.methods.completion_complete import completion_complete
 from django_mcp.methods.resources_list import resources_list
+from django_mcp.methods.resources_read import resources_read
 from django_mcp.methods.resources_templates_list import resources_templates_list
+from django_mcp.methods.server_capabilities import server_capabilities
 from django_mcp.methods.prompts_list import prompts_list
 from django_mcp.methods.tools_list import tools_list
 
@@ -68,10 +71,16 @@ class MethodsView(APIView):
 
         if method == 'ping':
             return ping(request)
+        elif method == 'server/capabilities':
+            return server_capabilities(request)
+        elif method == 'completion/complete':
+            return completion_complete(request)
         elif method == 'resources/list':
             return resources_list(request)
         elif method == 'resources/templates/list':
             return resources_templates_list(request)
+        elif method == 'resources/read':
+            return resources_read(request)
         elif method == 'prompts/list':
             return prompts_list(request)
         elif method == 'tools/list':
