@@ -1,3 +1,5 @@
+from asgiref.sync import sync_to_async
+
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated, PermissionDenied
 from rest_framework.views import APIView
@@ -11,6 +13,39 @@ from django_mcp.methods.resources_templates_list import resources_templates_list
 from django_mcp.methods.server_capabilities import server_capabilities
 from django_mcp.methods.prompts_list import prompts_list
 from django_mcp.methods.tools_list import tools_list
+
+class AsyncMethodsView(APIView):
+    # Inside AsyncMethodsView
+    @classmethod
+    def as_view(cls, **initkwargs):
+        permission_classes = initkwargs.pop("permission_classes", None)
+        if permission_classes:
+            cls.permission_classes = permission_classes
+
+        view = super(AsyncMethodsView, cls).as_view(**initkwargs)
+        view.cls = cls
+        view.initkwargs = initkwargs
+
+        async def async_view(request, *args, **kwargs):
+            self = view.cls(**view.initkwargs)
+            self.setup(request, *args, **kwargs)
+            self.request = self.initialize_request(request)
+
+            # Check permissions (sync wrapped)
+            if hasattr(self, 'check_permissions'):
+                await sync_to_async(self.check_permissions)(self.request)
+
+            # Dispatch async handler
+            response = await self.dispatch(self.request, *args, **kwargs)
+
+            # ✅ FIX: Finalize response so DRF can render it correctly
+            return self.finalize_response(self.request, response, *args, **kwargs)
+
+        async_view.view_class = cls
+        async_view.view_initkwargs = initkwargs
+        async_view.cls = cls
+        return async_view
+
 
 class MethodsView(APIView):
     permission_classes = []
