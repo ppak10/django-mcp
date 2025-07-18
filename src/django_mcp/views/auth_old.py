@@ -17,7 +17,8 @@ from mcp.shared.auth import OAuthMetadata, ProtectedResourceMetadata
 
 PermissionClass = type[BasePermission] | OperandHolder | SingleOperandHolder
 
-import json
+from django_mcp.auth.handlers import RegistrationHandler
+from django_mcp.auth.provider import AuthProvider
 
 # Constants
 AUTHORIZATION_PATH = "/authorize"
@@ -143,18 +144,6 @@ class OAuthAuthorizationServer(APIView):
 
         return metadata
 
-class RegisterView(APIView):
-    """OAuth Client Registration endpoint"""
-    permission_classes: Sequence[PermissionClass] = [AllowAny]
-    
-    def get_allowed_methods(self):
-        return ['POST', 'OPTIONS']
-    
-    def post(self, request: Request):
-        print(f"register: {request.data}")
-        # Handle client registration
-        # Your existing RegistrationHandler.handle logic
-        pass
 
 class AuthorizationView(APIView):
     """OAuth Authorization endpoint - no CORS"""
