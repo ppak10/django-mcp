@@ -1,3 +1,5 @@
+import json
+
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import OAuthMetadata
 
@@ -28,7 +30,7 @@ class OAuthAuthorizationServerView(APIView):
 
         return Response(
             headers={"Cache-Control": "public, max-age=3600"},
-            data=metadata.model_dump_json(exclude_none=True).encode("utf-8"),
+            data=json.loads(metadata.model_dump_json(exclude_none=True).encode("utf-8")),
         )
     
     def build_metadata(self):

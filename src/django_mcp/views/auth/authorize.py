@@ -4,7 +4,8 @@ import time
 
 from asgiref.sync import async_to_sync
 
-from django_mcp.auth.provider import AuthProvider
+from django.http import HttpRequest
+from django_mcp.auth.provider import auth_provider
 
 from mcp.server.auth.errors import stringify_pydantic_error
 from mcp.server.auth.settings import ClientRegistrationOptions
@@ -37,20 +38,15 @@ class AuthorizeView(APIView):
 
     # TODO: Remove
     permission_classes = [AllowAny]
-    
-    def get_allowed_methods(self):
-        return ['POST', 'OPTIONS']
+   
+    def post(self, request: Request, *args, **kwargs) -> Response:
+        return self.handle(request, *args, **kwargs)
 
-    @override
-    def dispatch(self, request: Request, *args, **kwargs):
-        # Call super() to retain middleware, authentication, etc.
-        self.request: Request = request
-        self.args = args
-        self.kwargs = kwargs
+    def get(self, request: Request, *args, **kwargs) -> Response:
         return self.handle(request, *args, **kwargs)
 
     def handle(self, request: Request, *args, **kwargs) -> Response:
-        provider = AuthProvider()
+        provider = auth_provider
 
         state = None
         redirect_uri = None
@@ -108,6 +104,8 @@ class AuthorizeView(APIView):
                 state=state,
             )
 
+            print(f"error_resp: {error_resp.model_dump_json(exclude_none=True).encode('utf-8')}")
+
             if redirect_uri and client:
                 return Response(
                     headers={
@@ -119,24 +117,29 @@ class AuthorizeView(APIView):
             else:
                 return Response(
                     headers={"Cache-Control": "no-store"},
-                    data=json.dumps(error_resp.model_dump_json(exclude_none=True).encode("utf-8")),
+                    data=json.loads(error_resp.model_dump_json(exclude_none=True).encode("utf-8")),
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+
         try:
             if request.method == "GET":
                 # Convert query_params to dict for pydantic validation
-                params = request.query_params
+                params = request.query_params.dict()
+                print(params)
             elif request.method == "POST":
                 # Parse form data for POST requests
-                params = async_to_sync(request.form)
+                params = request.data
             else:
                 return Response({"error": "Method not allowed"}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
     
             # Save state if it exists, even before validation
             state = best_effort_extract_string("state", params)
+            print(f"state: {state}")
+            print(f"params: {params}")
 
             try:
                 auth_request = AuthorizationRequest.model_validate(params)
+                print(f"auth_request: {auth_request}")
                 state = auth_request.state  # Update with validated state
             except ValidationError as validation_error:
                 error: AuthorizationErrorCode = "invalid_request"
@@ -148,6 +151,7 @@ class AuthorizeView(APIView):
 
             # Get client information
             client = async_to_sync(provider.get_client)(auth_request.client_id)
+            print(f"client: {client}")
 
             if not client:
                 # For client_id validation errors, return direct error (no redirect)
@@ -160,6 +164,7 @@ class AuthorizeView(APIView):
             # Validate redirect_uri against client's registered URIs
             try:
                 redirect_uri = client.validate_redirect_uri(auth_request.redirect_uri)
+                print(f"redirect_uri: {redirect_uri}")
             except InvalidRedirectUriError as validation_error:
                 # For redirect_uri validation errors, return direct error (no redirect)
                 return error_response(
@@ -170,6 +175,7 @@ class AuthorizeView(APIView):
             # Validate scope - for scope errors, we can redirect
             try:
                 scopes = client.validate_scope(auth_request.scope)
+                print(f"scopes: {scopes}")
             except InvalidScopeError as validation_error:
                 # For scope errors, redirect with error parameters
                 return error_response(
@@ -186,6 +192,8 @@ class AuthorizeView(APIView):
                 redirect_uri_provided_explicitly=auth_request.redirect_uri is not None,
                 resource=auth_request.resource,  # RFC 8707
             )
+
+            print(f"auth_params: {auth_params}")
 
             try:
                 # Let the provider pick the next URI to redirect to

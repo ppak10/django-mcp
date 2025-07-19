@@ -18,7 +18,8 @@ class AuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, RefreshTo
     def __init__(self):
         self.clients: dict[str, OAuthClientInformationFull] = {}
         self.state_mapping: dict[str, dict[str, str | None]] = {}
-        self.auth_callback_url: str = "http://127.0.0.1:8002/login/callback"
+        # self.auth_callback_url: str = "http://127.0.0.1:8002/login/callback"
+        self.auth_callback_url: str = "http://127.0.0.1:8002/login"
         self.auth_codes: dict[str, AuthorizationCode] = {}
         self.tokens: dict[str, AccessToken] = {}
         # Store authenticated user information
@@ -169,4 +170,6 @@ class AuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode, RefreshTo
         if token in self.tokens:
             if isinstance(token, str):
                 del self.tokens[token]
+
+auth_provider = AuthProvider()
 
