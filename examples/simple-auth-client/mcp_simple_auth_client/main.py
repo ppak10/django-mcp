@@ -226,7 +226,8 @@ class SimpleAuthClient:
         async with ClientSession(read_stream, write_stream) as session:
             self.session = session
             print("⚡ Starting session initialization...")
-            await session.initialize()
+            response = await session.initialize()
+            print(f"initialization response: {response}")
             print("✨ Session initialization complete!")
 
             print(f"\n✅ Connected to MCP server at {self.server_url}")

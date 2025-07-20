@@ -4,7 +4,7 @@ import time
 
 from asgiref.sync import async_to_sync
 
-from django_mcp.auth.provider import auth_provider
+from django_mcp.auth_provider import auth_provider
 
 from mcp.server.auth.errors import stringify_pydantic_error
 from mcp.server.auth.settings import ClientRegistrationOptions

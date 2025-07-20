@@ -1,27 +1,21 @@
 import json
-import secrets
-import time
 
 from asgiref.sync import async_to_sync
 
-from django.http import HttpRequest
-from django_mcp.auth.provider import auth_provider
+from django_mcp.auth_provider import auth_provider
 
 from mcp.server.auth.errors import stringify_pydantic_error
-from mcp.server.auth.settings import ClientRegistrationOptions
-from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata
 from mcp.server.auth.provider import (
     AuthorizationErrorCode,
     AuthorizationParams,
     AuthorizeError,
-    OAuthAuthorizationServerProvider,
     construct_redirect_uri,
 )
  
 from mcp.server.auth.handlers.authorize import AuthorizationRequest, AuthorizationErrorResponse, best_effort_extract_string, AnyUrlModel
 from mcp.shared.auth import InvalidRedirectUriError, InvalidScopeError
 
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from rest_framework.views import APIView
 from rest_framework.request import Request

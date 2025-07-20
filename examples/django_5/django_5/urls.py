@@ -16,10 +16,8 @@ Including another URLconf
 """
 from django.urls import include, path
 from django_mcp.urls import urlpatterns
-print('called urls.py')
 
 urlpatterns = [
-    path('', include("proxy.urls")),
     path('', include(urlpatterns))
 ]
 

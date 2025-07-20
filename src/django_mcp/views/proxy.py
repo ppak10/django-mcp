@@ -12,19 +12,21 @@ from starlette.types import Scope
 
 from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
-@method_decorator(csrf_exempt, name='dispatch')
 class ProxyView(APIView):
     sessions = {}
 
     def post(self, request, session_id=None):
         try:
             body = request.data  # DRF auto-parses JSON body for you
+            print(f"body: {body}")
             rpc_request = types.JSONRPCRequest.model_validate(body)
         except Exception as e:
             return Response(
                 {"error": f"Invalid JSON-RPC request: {e}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        
+        print(f"rpc_request.method: {rpc_request.method}")
 
         if rpc_request.method == "initialize":
 

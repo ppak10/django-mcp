@@ -1,7 +1,7 @@
 import secrets
 import time
 
-from django_mcp.auth.provider import auth_provider
+from django_mcp.auth_provider import auth_provider
 
 from mcp.server.auth.provider import (
     AuthorizationCode,
