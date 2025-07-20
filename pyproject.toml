@@ -8,9 +8,11 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
+    "channels>=4.2.2",
     "django>=4.0",
     "djangorestframework>=3.16.0",
     "mcp==1.11.0",
+    "uvicorn>=0.34.3",
 ]
 
 [project.urls]

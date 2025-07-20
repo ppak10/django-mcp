@@ -57,6 +57,19 @@ wheels = [
 ]
 
 [[package]]
+name = "channels"
+version = "4.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "asgiref" },
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/16/d6/049f93c3c96a88265a52f85da91d2635279261bbd4a924b45caa43b8822e/channels-4.2.2.tar.gz", hash = "sha256:8d7208e48ab8fdb972aaeae8311ce920637d97656ffc7ae5eca4f93f84bcd9a0", size = 26647, upload-time = "2025-03-30T14:59:20.35Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/bf/4799809715225d19928147d59fda0d3a4129da055b59a9b3e35aa6223f52/channels-4.2.2-py3-none-any.whl", hash = "sha256:ff36a6e1576cacf40bcdc615fa7aece7a709fc4fdd2dc87f2971f4061ffdaa81", size = 31048, upload-time = "2025-03-30T14:59:18.969Z" },
+]
+
+[[package]]
 name = "charset-normalizer"
 version = "3.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -156,9 +169,11 @@ wheels = [
 name = "django-modelcontextprotocol"
 source = { virtual = "." }
 dependencies = [
+    { name = "channels" },
     { name = "django" },
     { name = "djangorestframework" },
     { name = "mcp" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -169,11 +184,13 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "channels", specifier = ">=4.2.2" },
     { name = "django", specifier = ">=4.0" },
     { name = "django-stubs", marker = "extra == 'dev'", specifier = ">=5.2.2" },
     { name = "djangorestframework", specifier = ">=3.16.0" },
     { name = "djangorestframework-stubs", marker = "extra == 'dev'", specifier = ">=3.16.1" },
     { name = "mcp", specifier = "==1.11.0" },
+    { name = "uvicorn", specifier = ">=0.34.3" },
 ]
 provides-extras = ["dev"]
 

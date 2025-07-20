@@ -1,16 +1,22 @@
-"""
-ASGI config for django_5 project.
-
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
-"""
-
 import os
-
+import django
+from channels.routing import ProtocolTypeRouter, URLRouter
+from django.urls import re_path
 from django.core.asgi import get_asgi_application
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_5.settings')
+django.setup()
 
-application = get_asgi_application()
+from django_mcp.routes import http_urlpatterns 
+
+django_asgi_app = get_asgi_application()
+
+application = ProtocolTypeRouter({
+    "http": URLRouter(
+        http_urlpatterns + [
+            # fallback: catch-all route to Django views ASGI app
+            re_path(r".*", django_asgi_app),
+        ]
+    ),
+})
+

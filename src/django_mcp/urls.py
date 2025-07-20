@@ -25,6 +25,5 @@ urlpatterns = [
     path('login', login_page),
     path('login/callback', LoginCallbackView.as_view()),
     path('token', TokenView.as_view()),
-    path('mcp', ProxyView.as_view()),
 ]
 
