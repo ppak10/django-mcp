@@ -1,7 +1,14 @@
 from django.urls import path
 from .consumers import StreamableHTTPConsumer
 
-http_urlpatterns = [
-    path("mcp", StreamableHTTPConsumer.as_asgi()),
-]
+def create_http_urlpatterns(handle_streamable_http):
+    http_urlpatterns = [
+        path(
+            "mcp",
+            StreamableHTTPConsumer.as_asgi(
+                handle_streamable_http=handle_streamable_http
+            )
+        ),
+    ]
+    return http_urlpatterns
 
