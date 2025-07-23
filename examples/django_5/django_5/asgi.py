@@ -6,9 +6,8 @@ from django.urls import re_path
 from django.core.asgi import get_asgi_application
 
 from django_mcp.event_store import InMemoryEventStore
-from django_mcp.middleware import LifespanMiddleware
+from django_mcp.middleware import LifespanMiddleware, create_session_manager_lifespan
 from django_mcp.routes import create_http_urlpatterns 
-from django_mcp.streamable_http_manager import create_session_manager_lifespan 
 from django_mcp.types import Receive, Send, Scope
 
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
