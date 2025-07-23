@@ -1,136 +1,24 @@
-import os
 import django
+import os
+
 from channels.routing import ProtocolTypeRouter, URLRouter
 from django.urls import re_path
 from django.core.asgi import get_asgi_application
 
-
-import contextlib
-import logging
-from collections.abc import AsyncIterator
-
-import anyio
-import mcp.types as types
-from mcp.server.lowlevel import Server
-from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from pydantic import AnyUrl
-
 from django_mcp.event_store import InMemoryEventStore
+from django_mcp.middleware import LifespanMiddleware
+from django_mcp.routes import create_http_urlpatterns 
+from django_mcp.streamable_http_manager import create_session_manager_lifespan 
+from django_mcp.types import Receive, Send, Scope
 
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
-import contextlib
-from typing import AsyncIterator, Callable
+from .mcp_app import app
 
-# from starlette.types import ASGIApp, Receive, Scope, Send
-
-class LifespanMiddleware:
-    def __init__(self, app, on_startup, on_shutdown):
-        self.app = app
-        self.on_startup = on_startup
-        self.on_shutdown = on_shutdown
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "lifespan":
-            while True:
-                message = await receive()
-                if message["type"] == "lifespan.startup":
-                    await self.on_startup()
-                    await send({"type": "lifespan.startup.complete"})
-                elif message["type"] == "lifespan.shutdown":
-                    await self.on_shutdown()
-                    await send({"type": "lifespan.shutdown.complete"})
-                    return
-        else:
-            await self.app(scope, receive, send)
-
-
-
-# Configure logging
-logger = logging.getLogger(__name__)
-log_level = "INFO"
-port = 8002
 json_response = False
 
-logging.basicConfig(
-    level=getattr(logging, log_level.upper()),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-
-app = Server("mcp-streamable-http-demo")
-
-@app.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[types.ContentBlock]:
-    ctx = app.request_context
-    interval = arguments.get("interval", 1.0)
-    count = arguments.get("count", 5)
-    caller = arguments.get("caller", "unknown")
-
-    # Send the specified number of notifications with the given interval
-    for i in range(count):
-        # Include more detailed message for resumability demonstration
-        notification_msg = (
-            f"[{i + 1}/{count}] Event from '{caller}' - "
-            f"Use Last-Event-ID to resume if disconnected"
-        )
-        await ctx.session.send_log_message(
-            level="info",
-            data=notification_msg,
-            logger="notification_stream",
-            # Associates this notification with the original request
-            # Ensures notifications are sent to the correct response stream
-            # Without this, notifications will either go to:
-            # - a standalone SSE stream (if GET request is supported)
-            # - nowhere (if GET request isn't supported)
-            related_request_id=ctx.request_id,
-        )
-        logger.debug(f"Sent notification {i + 1}/{count} for caller: {caller}")
-        if i < count - 1:  # Don't wait after the last notification
-            await anyio.sleep(interval)
-
-    # This will send a resource notificaiton though standalone SSE
-    # established by GET request
-    await ctx.session.send_resource_updated(uri=AnyUrl("http:///test_resource"))
-    return [
-        types.TextContent(
-            type="text",
-            text=(
-                f"Sent {count} notifications with {interval}s interval"
-                f" for caller: {caller}"
-            ),
-        )
-    ]
-
-@app.list_tools()
-async def list_tools() -> list[types.Tool]:
-    return [
-        types.Tool(
-            name="start-notification-stream",
-            description=(
-                "Sends a stream of notifications with configurable count"
-                " and interval"
-            ),
-            inputSchema={
-                "type": "object",
-                "required": ["interval", "count", "caller"],
-                "properties": {
-                    "interval": {
-                        "type": "number",
-                        "description": "Interval between notifications in seconds",
-                    },
-                    "count": {
-                        "type": "number",
-                        "description": "Number of notifications to send",
-                    },
-                    "caller": {
-                        "type": "string",
-                        "description": (
-                            "Identifier of the caller to include in notifications"
-                        ),
-                    },
-                },
-            },
-        )
-    ]
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_5.settings')
+django.setup()
 
 # Create event store for resumability
 # The InMemoryEventStore enables resumability support for StreamableHTTP transport.
@@ -148,52 +36,15 @@ session_manager = StreamableHTTPSessionManager(
     event_store=event_store,  # Enable resumability
     json_response=json_response,
 )
-
 # ASGI handler for streamable HTTP connections
-async def handle_streamable_http(scope, receive, send) -> None:
+async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
     await session_manager.handle_request(scope, receive, send)
-
-@contextlib.asynccontextmanager
-async def lifespan() -> AsyncIterator[None]:
-    """Context manager for managing session manager lifecycle."""
-    async with session_manager.run():
-        logger.info("Application started with StreamableHTTP session manager!")
-        try:
-            yield
-        finally:
-            logger.info("Application shutting down...")
-
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_5.settings')
-django.setup()
-
-from django_mcp.routes import create_http_urlpatterns 
 
 http_urlpatterns = create_http_urlpatterns(handle_streamable_http)
 
+on_startup, on_shutdown = create_session_manager_lifespan(session_manager)
+
 django_asgi_app = get_asgi_application()
-
-session_manager_cm = session_manager.run()  # this is an async context manager
-session_manager_context = None  # Will hold context manager's __aexit__ for shutdown
-
-async def on_startup():
-    logging.info("Starting up session manager or other services")
-    global session_manager_context
-    session_manager_context = await session_manager_cm.__aenter__()
-
-async def on_shutdown():
-    logging.info("Shutting down session manager or other services")
-    global session_manager_context
-    if session_manager_context:
-        await session_manager_cm.__aexit__(None, None, None)
-
-# # Define your startup and shutdown logic:
-# async def on_startup():
-#     logging.info("Starting up session manager or other services")
-#     # e.g. await session_manager.run() or start background tasks
-#
-# async def on_shutdown():
-#     logging.info("Shutting down session manager or other services")
-#     # clean up, close resources
 
 application = ProtocolTypeRouter({
     "http": URLRouter(
