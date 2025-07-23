@@ -1,6 +1,11 @@
+from __future__ import annotations as _annotations
+
 import anyio
-import contextvars
+import json
+import jsonschema
+import logging
 import mcp.types as types
+import typing
 import warnings
 
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -8,23 +13,30 @@ from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStre
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, MutableMapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 
+logger = logging.getLogger(__name__)
+
 from mcp.server.session import ServerSession
 from mcp.server.models import InitializationOptions
-from mcp.server.lowlevel.server import NotificationOptions, LifespanResultT, RequestT
+from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.server.lowlevel.server import (
+    NotificationOptions,
+    LifespanResultT,
+    RequestT,
+    StructuredContent,
+    UnstructuredContent,
+    CombinationContent,
+    request_ctx,
+)
 
 from mcp.shared.context import RequestContext
 from mcp.shared.exceptions import McpError
 from mcp.shared.message import ServerMessageMetadata, SessionMessage
 from mcp.shared.session import RequestResponder
 
-from typing import Generic, Any
-
-# This will be properly typed in each Server instance's context
-request_ctx: contextvars.ContextVar[RequestContext[ServerSession, Any, Any]] = contextvars.ContextVar("request_ctx")
+from pydantic import AnyUrl
 
 @asynccontextmanager
-async def lifespan(proxy) -> AsyncIterator[object]:
-# async def lifespan(proxy: Proxy[LifespanResultT, RequestT]) -> AsyncIterator[object]:
+async def lifespan(proxy: Proxy[LifespanResultT, RequestT]) -> AsyncIterator[object]:
     """Default lifespan context manager that does nothing.
 
     Args:
@@ -35,20 +47,19 @@ async def lifespan(proxy) -> AsyncIterator[object]:
     """
     yield {}
 
-class Proxy(Generic[LifespanResultT, RequestT]):
+class Proxy(typing.Generic[LifespanResultT, RequestT]):
     def __init__(
         self,
         name: str,
         version: str | None = None,
         instructions: str | None = None,
-        lifespan = lifespan,
-        # lifespan: Callable[
-        #     [Proxy[LifespanResultT, RequestT]],
-        #     AbstractAsyncContextManager[LifespanResultT],
-        # ] = lifespan,
+        lifespan: Callable[
+            [Proxy[LifespanResultT, RequestT]],
+            AbstractAsyncContextManager[LifespanResultT],
+        ] = lifespan,
     ):
-        self.name:str = name
-        self.version:str | None = version
+        self.name: str = name
+        self.version: str | None = version
         self.instructions: str | None = instructions
         self.lifespan: Callable[
             [Proxy[LifespanResultT, RequestT]],
@@ -65,7 +76,7 @@ class Proxy(Generic[LifespanResultT, RequestT]):
     def create_initialization_options(
         self,
         notification_options: NotificationOptions | None = None,
-        experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+        experimental_capabilities: dict[str, dict[str, typing.Any]] | None = None,
     ) -> InitializationOptions:
         """Create initialization options from this server instance."""
 
@@ -92,7 +103,7 @@ class Proxy(Generic[LifespanResultT, RequestT]):
     def get_capabilities(
         self,
         notification_options: NotificationOptions,
-        experimental_capabilities: dict[str, dict[str, Any]],
+        experimental_capabilities: dict[str, dict[str, typing.Any]],
     ) -> types.ServerCapabilities:
         """Convert existing handlers to a ServerCapabilities object."""
         prompts_capability = None
@@ -143,7 +154,7 @@ class Proxy(Generic[LifespanResultT, RequestT]):
         def decorator(func: Callable[[], Awaitable[list[types.Prompt]]]):
             print("Registering handler for PromptListRequest")
 
-            async def handler(_: Any):
+            async def handler(_: typing.Any):
                 prompts = await func()
                 return types.ServerResult(types.ListPromptsResult(prompts=prompts))
 
@@ -171,7 +182,7 @@ class Proxy(Generic[LifespanResultT, RequestT]):
         def decorator(func: Callable[[], Awaitable[list[types.Resource]]]):
             print("Registering handler for ListResourcesRequest")
 
-            async def handler(_: Any):
+            async def handler(_: typing.Any):
                 resources = await func()
                 return types.ServerResult(types.ListResourcesResult(resources=resources))
 
@@ -184,11 +195,68 @@ class Proxy(Generic[LifespanResultT, RequestT]):
         def decorator(func: Callable[[], Awaitable[list[types.ResourceTemplate]]]):
             print("Registering handler for ListResourceTemplatesRequest")
 
-            async def handler(_: Any):
+            async def handler(_: typing.Any):
                 templates = await func()
                 return types.ServerResult(types.ListResourceTemplatesResult(resourceTemplates=templates))
 
             self.request_handlers[types.ListResourceTemplatesRequest] = handler
+            return func
+
+        return decorator
+
+    def read_resource(self):
+        def decorator(
+            func: Callable[[AnyUrl], Awaitable[str | bytes | Iterable[ReadResourceContents]]],
+        ):
+            logger.debug("Registering handler for ReadResourceRequest")
+
+            async def handler(req: types.ReadResourceRequest):
+                result = await func(req.params.uri)
+
+                def create_content(data: str | bytes, mime_type: str | None):
+                    match data:
+                        case str() as data:
+                            return types.TextResourceContents(
+                                uri=req.params.uri,
+                                text=data,
+                                mimeType=mime_type or "text/plain",
+                            )
+                        case bytes() as data:
+                            import base64
+
+                            return types.BlobResourceContents(
+                                uri=req.params.uri,
+                                blob=base64.b64encode(data).decode(),
+                                mimeType=mime_type or "application/octet-stream",
+                            )
+
+                match result:
+                    case str() | bytes() as data:
+                        warnings.warn(
+                            "Returning str or bytes from read_resource is deprecated. Use Iterable[ReadResourceContents] instead.",
+                            DeprecationWarning,
+                            stacklevel=2,
+                        )
+                        content = create_content(data, None)
+                    case Iterable() as contents:
+                        contents_list = [
+                            create_content(content_item.content, content_item.mime_type) for content_item in contents
+                        ]
+                        return types.ServerResult(
+                            types.ReadResourceResult(
+                                contents=contents_list,
+                            )
+                        )
+                    case _:
+                        raise ValueError(f"Unexpected return type from read_resource: {type(result)}")
+
+                return types.ServerResult(
+                    types.ReadResourceResult(
+                        contents=[content],
+                    )
+                )
+
+            self.request_handlers[types.ReadResourceRequest] = handler
             return func
 
         return decorator
@@ -206,11 +274,37 @@ class Proxy(Generic[LifespanResultT, RequestT]):
 
         return decorator
 
+    def subscribe_resource(self):
+        def decorator(func: Callable[[AnyUrl], Awaitable[None]]):
+            logger.debug("Registering handler for SubscribeRequest")
+
+            async def handler(req: types.SubscribeRequest):
+                await func(req.params.uri)
+                return types.ServerResult(types.EmptyResult())
+
+            self.request_handlers[types.SubscribeRequest] = handler
+            return func
+
+        return decorator
+
+    def unsubscribe_resource(self):
+        def decorator(func: Callable[[AnyUrl], Awaitable[None]]):
+            logger.debug("Registering handler for UnsubscribeRequest")
+
+            async def handler(req: types.UnsubscribeRequest):
+                await func(req.params.uri)
+                return types.ServerResult(types.EmptyResult())
+
+            self.request_handlers[types.UnsubscribeRequest] = handler
+            return func
+
+        return decorator
+
     def list_tools(self):
         def decorator(func: Callable[[], Awaitable[list[types.Tool]]]):
             print("Registering handler for ListToolsRequest")
 
-            async def handler(_: Any):
+            async def handler(_: typing.Any):
                 tools = await func()
                 # Refresh the tool cache
                 self._tool_cache.clear()
@@ -232,6 +326,105 @@ class Proxy(Generic[LifespanResultT, RequestT]):
             )
         )
 
+    async def _get_cached_tool_definition(self, tool_name: str) -> types.Tool | None:
+        """Get tool definition from cache, refreshing if necessary.
+
+        Returns the Tool object if found, None otherwise.
+        """
+        if tool_name not in self._tool_cache:
+            if types.ListToolsRequest in self.request_handlers:
+                logger.debug("Tool cache miss for %s, refreshing cache", tool_name)
+                _ = await self.request_handlers[types.ListToolsRequest](None)
+
+        tool = self._tool_cache.get(tool_name)
+        if tool is None:
+            logger.warning("Tool '%s' not listed, no validation will be performed", tool_name)
+
+        return tool
+
+    def call_tool(self, *, validate_input: bool = True):
+        """Register a tool call handler.
+
+        Args:
+            validate_input: If True, validates input against inputSchema. Default is True.
+
+        The handler validates input against inputSchema (if validate_input=True), calls the tool function,
+        and builds a CallToolResult with the results:
+        - Unstructured content (iterable of ContentBlock): returned in content
+        - Structured content (dict): returned in structuredContent, serialized JSON text returned in content
+        - Both: returned in content and structuredContent
+
+        If outputSchema is defined, validates structuredContent or errors if missing.
+        """
+
+        def decorator(
+            func: Callable[
+                ...,
+                Awaitable[UnstructuredContent | StructuredContent | CombinationContent],
+            ],
+        ):
+            logger.debug("Registering handler for CallToolRequest")
+
+            async def handler(req: types.CallToolRequest):
+                try:
+                    tool_name = req.params.name
+                    arguments = req.params.arguments or {}
+                    tool = await self._get_cached_tool_definition(tool_name)
+
+                    # input validation
+                    if validate_input and tool:
+                        try:
+                            jsonschema.validate(instance=arguments, schema=tool.inputSchema)
+                        except jsonschema.ValidationError as e:
+                            return self._make_error_result(f"Input validation error: {e.message}")
+
+                    # tool call
+                    results = await func(tool_name, arguments)
+
+                    # output normalization
+                    unstructured_content: UnstructuredContent
+                    maybe_structured_content: StructuredContent | None
+                    if isinstance(results, tuple) and len(results) == 2:
+                        # tool returned both structured and unstructured content
+                        unstructured_content, maybe_structured_content = typing.cast(CombinationContent, results)
+                    elif isinstance(results, dict):
+                        # tool returned structured content only
+                        maybe_structured_content = typing.cast(StructuredContent, results)
+                        unstructured_content = [types.TextContent(type="text", text=json.dumps(results, indent=2))]
+                    elif hasattr(results, "__iter__"):
+                        # tool returned unstructured content only
+                        unstructured_content = typing.cast(UnstructuredContent, results)
+                        maybe_structured_content = None
+                    else:
+                        return self._make_error_result(f"Unexpected return type from tool: {type(results).__name__}")
+
+                    # output validation
+                    if tool and tool.outputSchema is not None:
+                        if maybe_structured_content is None:
+                            return self._make_error_result(
+                                "Output validation error: outputSchema defined but no structured output returned"
+                            )
+                        else:
+                            try:
+                                jsonschema.validate(instance=maybe_structured_content, schema=tool.outputSchema)
+                            except jsonschema.ValidationError as e:
+                                return self._make_error_result(f"Output validation error: {e.message}")
+
+                    # result
+                    return types.ServerResult(
+                        types.CallToolResult(
+                            content=list(unstructured_content),
+                            structuredContent=maybe_structured_content,
+                            isError=False,
+                        )
+                    )
+                except Exception as e:
+                    return self._make_error_result(str(e))
+
+            self.request_handlers[types.CallToolRequest] = handler
+            return func
+
+        return decorator
     def progress_notification(self):
         def decorator(
             func: Callable[[str | int, float, float | None, str | None], Awaitable[None]],
@@ -343,14 +536,14 @@ class Proxy(Generic[LifespanResultT, RequestT]):
     async def _handle_request(
         self,
         message: RequestResponder[types.ClientRequest, types.ServerResult],
-        req: Any,
+        req: typing.Any,
         session: ServerSession,
         lifespan_context: LifespanResultT,
         raise_exceptions: bool,
     ):
-        print(f"Processing request of type {type(req).__name__}")
+        logger.info(f"Processing request of type {type(req).__name__}")
         if handler := self.request_handlers.get(type(req)):  # type: ignore
-            print(f"Dispatching request of type {type(req).__name__}")
+            logger.debug(f"Dispatching request of type {type(req).__name__}")
 
             token = None
             try:
@@ -393,7 +586,7 @@ class Proxy(Generic[LifespanResultT, RequestT]):
 
         print("Response sent")
 
-    async def _handle_notification(self, notify: Any):
+    async def _handle_notification(self, notify: typing.Any):
         if handler := self.notification_handlers.get(type(notify)):  # type: ignore
             print(f"Dispatching notification of type {type(notify).__name__}")
 
