@@ -541,6 +541,7 @@ class Proxy(typing.Generic[LifespanResultT, RequestT]):
         lifespan_context: LifespanResultT,
         raise_exceptions: bool,
     ):
+        print(f"Processing request of type {type(req).__name__}")
         logger.info(f"Processing request of type {type(req).__name__}")
         if handler := self.request_handlers.get(type(req)):  # type: ignore
             logger.debug(f"Dispatching request of type {type(req).__name__}")

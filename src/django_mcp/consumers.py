@@ -17,5 +17,7 @@ class StreamableHTTPConsumer(AsyncHttpConsumer):
 
     @override
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        print(f"called {scope['method']} {scope['path']}")
+        # Just delegate to the handler directly, no CORS here
         await self.handler(scope, receive, send)
 
